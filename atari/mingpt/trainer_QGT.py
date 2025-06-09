@@ -285,6 +285,7 @@ class Trainer:
                 self.save_checkpoint()
                 print("check_point saved")
             
+            
 
 
 

@@ -185,9 +185,10 @@ def dataset():
             rtgs = torch.tensor(f["rtgs"][:], dtype=torch.float32)
             mask_lengths = torch.tensor(f["mask_lengths"][:], dtype=torch.long)
             upper_bounds = torch.tensor(f["upper_bounds"][:], dtype=torch.float32)
+            entropy = torch.tensor(f["entropy"][:], dtype=torch.float32)
 
 
-        dataset = TensorDataset(queries, results, rtgs, mask_lengths, upper_bounds)
+        dataset = TensorDataset(queries, results, rtgs, mask_lengths, upper_bounds, entropy)
         #self.data_loader = DataLoader(dataset, batch_size=self.config.batch_size, shuffle=True, num_workers=self.config.num_workers)
         return dataset
 
