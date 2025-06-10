@@ -58,7 +58,7 @@ def generate_covariance_maximizing_sample(k, max_len, pad_scalar_val, pad_vec_va
     model.setObjective(1, GRB.MAXIMIZE)
     model.optimize()
     num_solutions = model.SolCount
-    q, r, rwrd = [], [], [np.log2(num_solutions)]
+    q, r, rwrd, entropy_list = [], [], [-1], [np.log2(num_solutions)]
     num_of_constraints = 0
     is_solved = False
     while not is_solved:
@@ -95,21 +95,24 @@ def generate_covariance_maximizing_sample(k, max_len, pad_scalar_val, pad_vec_va
                 is_solved = True
                 rwrd.append(0)
             else:
-                rwrd.append(np.log2(model.SolCount))
+                rwrd.append(-1)
         else:
             rwrd.append(0)
             is_solved = True
+        entropy_list.append(np.log2(model.SolCount) if model.SolCount > 0 else 0.0)
 
-    # rtg, s = [], 0
-    # for reward in reversed(rwrd):
-    #     s += reward
-    #     rtg.append(s)
-    # rtg = list(reversed(rtg))
+
+    rtg, s = [], 0
+    for reward in reversed(rwrd):
+        s += reward
+        rtg.append(s)
+    rtg = list(reversed(rtg))
     mask_length = min(len(rwrd), max_len)
     q_padded = pad_sequence2d(q[:max_len], max_len, pad_vec_val)
     r_padded = pad_sequence(r[:max_len], max_len, pad_scalar_val)
-    rtg_padded = pad_sequence(rwrd[:max_len], max_len, pad_scalar_val)
-    return q_padded, r_padded, rtg_padded, np.int8(mask_length), np.squeeze(x)
+    rtg_padded = pad_sequence(rtg[:max_len], max_len, pad_scalar_val)
+    entropy_padded = pad_sequence(entropy_list[:max_len], max_len, pad_scalar_val)
+    return q_padded, r_padded, rtg_padded, np.int8(mask_length), np.squeeze(x), entropy_padded
 
 def generate_and_store_sample(worker_id, num_samples_per_worker, k, max_len, pad_scalar_val, pad_vec_val, file_prefix):
     file_name = f"{file_prefix}_{worker_id}.h5"
@@ -120,6 +123,7 @@ def generate_and_store_sample(worker_id, num_samples_per_worker, k, max_len, pad
         d_rtgs = f.create_dataset("rtgs", (num_samples_per_worker*sol_count, max_len), dtype='float')
         d_mask_lengths = f.create_dataset("mask_lengths", (num_samples_per_worker*sol_count,), dtype='i1')
         d_bounds = f.create_dataset("upper_bounds", (num_samples_per_worker*sol_count, k), dtype='i1')
+        d_entropy = f.create_dataset("entropy", (num_samples_per_worker*sol_count, max_len), dtype='float32')
 
         pbar = tqdm(total=num_samples_per_worker*sol_count, position=worker_id, desc=f"Worker {worker_id}", leave=True)
         generator = XP.XPairGenerator(k)
@@ -129,12 +133,14 @@ def generate_and_store_sample(worker_id, num_samples_per_worker, k, max_len, pad
             if done:
                 break
             for _ in range(num_samples_per_worker):
-                q, r, rtg, mask_length, d_bound = generate_covariance_maximizing_sample(k, max_len, pad_scalar_val, pad_vec_val, x, x_half)
+                q, r, rtg, mask_length, d_bound, entropy = generate_covariance_maximizing_sample(k, max_len, pad_scalar_val, pad_vec_val, x, x_half)
                 d_queries[sample_idx] = q
                 d_results[sample_idx] = r
                 d_rtgs[sample_idx] = rtg
                 d_mask_lengths[sample_idx] = mask_length
                 d_bounds[sample_idx] = d_bound
+                d_entropy[sample_idx] = entropy
+
                 sample_idx += 1
                 pbar.update(1)
         pbar.close()
@@ -192,8 +198,8 @@ def count_samples_in_h5(file_name):
 if __name__ == '__main__':
     mp.set_start_method("spawn", force=True)
     parser = argparse.ArgumentParser()
-    parser.add_argument("--n_cores", type=int, default=6, help="Number of CPU cores to use")
-    parser.add_argument('--num_samples', type=int, default=1, help='Total number of samples to generate')
+    parser.add_argument("--n_cores", type=int, default=1, help="Number of CPU cores to use")
+    parser.add_argument('--num_samples', type=int, default=10, help='Total number of samples to generate')
     parser.add_argument('--file_name', type=str, default="dataset", help='Name of the output file')
     parser.add_argument("--k", type=int, default=3, help="Length of the query vector")
 
