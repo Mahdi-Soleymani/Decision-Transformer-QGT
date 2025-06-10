@@ -180,12 +180,12 @@ def dataset():
     else:
             #"""Load dataset from HDF5 file and create DataLoader."""
         with h5py.File(config.dataset_path, "r") as f:
-            queries = torch.tensor(f["queries"][:], dtype=torch.float32)
-            results = torch.tensor(f["results"][:], dtype=torch.float32)
-            rtgs = torch.tensor(f["rtgs"][:], dtype=torch.float32)
-            mask_lengths = torch.tensor(f["mask_lengths"][:], dtype=torch.long)
-            upper_bounds = torch.tensor(f["upper_bounds"][:], dtype=torch.float32)
-            entropy = torch.tensor(f["entropy"][:], dtype=torch.float32)
+            queries = torch.tensor(f["queries"][::10], dtype=torch.float32)
+            results = torch.tensor(f["results"][::10], dtype=torch.float32)
+            rtgs = torch.tensor(f["rtgs"][::10], dtype=torch.float32)
+            mask_lengths = torch.tensor(f["mask_lengths"][::10], dtype=torch.long)
+            upper_bounds = torch.tensor(f["upper_bounds"][::10], dtype=torch.float32)
+            entropy = torch.tensor(f["entropy"][::10], dtype=torch.float32)
 
 
         dataset = TensorDataset(queries, results, rtgs, mask_lengths, upper_bounds, entropy)
