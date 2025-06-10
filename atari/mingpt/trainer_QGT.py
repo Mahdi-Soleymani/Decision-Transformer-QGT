@@ -248,6 +248,7 @@ class Trainer:
                     #report progress
                     pbar.set_description(f"Epoch {epoch_num+1} Loss: {loss.item():.5f}, LR: {lr:e}")
                     pbar.update(1)
+                    
             
 
                 if self.rank == 0:

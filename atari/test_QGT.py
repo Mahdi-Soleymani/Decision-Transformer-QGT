@@ -252,16 +252,21 @@ def test_sample(desired_num_of_queries, k, checkpoint_cov_path, checkpoint_rand_
 
 
 
-    q, r, rtg, mask_length= [ torch.full((config.k,), pad_vec_val, dtype=torch.int)],[config.k],[np.log2(G_model.SolCount)], 1   # Generate a sequence
+    q, r, rtg, mask_length= [ torch.full((config.k,), pad_vec_val, dtype=torch.int)],[config.k],[-config.desired_num_of_queries], 1   # Generate a sequence
+    entropy = torch.full((max_len,), pad_scalar_val, dtype=torch.float32)
     queries=(pad_sequence2d(q, max_len,pad_vec_val))  # Pad queries
     results=(pad_sequence(r, max_len,pad_scalar_val))
     rtgs=(pad_sequence(rtg, max_len,pad_scalar_val))
+    entropy[0] = np.log2(G_model.SolCount)
 
 
     mask_length = torch.tensor(mask_length,device=device)
     results = results.to(device)
     rtgs    = rtgs.to(device)
     queries = queries.to(device)
+    entropy = entropy.unsqueeze(0).to(device)
+
+    
 
 
 
@@ -276,6 +281,8 @@ def test_sample(desired_num_of_queries, k, checkpoint_cov_path, checkpoint_rand_
     mask_length = mask_length.unsqueeze(0)  # Adds batch dimension, result shape: [1, 10, 10]
     # while not is_solved and num_of_constraints<config.k :
     while not is_solved:
+        
+        
         with torch.no_grad():  # No need to track gradients during inference
             if mode=="DT":
                 
@@ -284,7 +291,7 @@ def test_sample(desired_num_of_queries, k, checkpoint_cov_path, checkpoint_rand_
                 upper_bounds = torch.tensor(x, dtype=torch.float32).to(device)
                 upper_bounds = upper_bounds.unsqueeze(0)  # Shaperrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrr: (1, k)
                 if model=="cov":
-                    probs,_=DT_cov_model( mask_length, rtgs,  results, upper_bounds, queries)
+                    probs,_=DT_cov_model( mask_length, rtgs,  results, upper_bounds, entropy, queries)
                     sampling="hard"
                     if num_of_constraints<config.k:
                         probs=probs[:,num_of_constraints,:]
@@ -366,8 +373,8 @@ def test_sample(desired_num_of_queries, k, checkpoint_cov_path, checkpoint_rand_
             sampling="hard"
 
 
-        if num_of_constraints<config.k:
-            queries[:, num_of_constraints,:] = next_query
+        if num_of_constraints<=config.k:
+            queries[:, num_of_constraints-1,:] = next_query
         else:
             next_query = next_query.to(queries.device)
             #queries = torch.cat([queries[:, 1:, :], next_query.unsqueeze(1)], dim=1)
@@ -403,11 +410,13 @@ def test_sample(desired_num_of_queries, k, checkpoint_cov_path, checkpoint_rand_
                 is_solved=True
             else:
                 if num_of_constraints<config.k:
-                    rtgs[:,    num_of_constraints]=np.log2(num_of_solutions)
+                    rtgs[:,    num_of_constraints]=min(-1,-config.desired_num_of_queries+num_of_constraints)
+                    entropy[:,    num_of_constraints]=np.log2(num_of_solutions)
                     results[:,num_of_constraints]=new_result
                     mask_length[:,]=num_of_constraints+1
                 else:
-                    rtgs = torch.cat([rtgs[:, 1:], torch.full((rtgs.size(0), 1), np.log2(num_of_solutions), device=device)], dim=1)
+                    rtgs = torch.cat([rtgs[:, 1:], torch.full((rtgs.size(0), 1), -1, device=device)], dim=1)
+                    entropy = torch.cat([entropy[:, 1:], torch.tensor([[np.log2(num_of_solutions)]], device=device)], dim=1)                    
                     results = torch.cat([results[:, 1:], new_result.unsqueeze(1)], dim=1)
                     mask_length[:,]=config.k-1
 
