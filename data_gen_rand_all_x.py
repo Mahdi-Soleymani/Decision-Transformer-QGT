@@ -184,9 +184,9 @@ if __name__ == '__main__':
     mp.set_start_method("spawn", force=True)
     parser = argparse.ArgumentParser()
     parser.add_argument("--n_cores", type=int, default=6, help="Number of CPU cores to use")
-    parser.add_argument('--num_samples', type=int, default=1, help='Total number of samples to generate')
+    parser.add_argument('--num_samples', type=int, default=100, help='Total number of samples to generate')
     parser.add_argument('--file_name', type=str, default="dataset", help='Name of the output file')
-    parser.add_argument("--k", type=int, default=5, help="Length of the query vector")
+    parser.add_argument("--k", type=int, default=3, help="Length of the query vector")
 
     args = parser.parse_args()
     k = args.k

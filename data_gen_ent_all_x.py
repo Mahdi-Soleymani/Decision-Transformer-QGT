@@ -9,6 +9,22 @@ import multiprocessing as mp
 import concurrent.futures
 import math
 import Xpair_gen as XP
+import itertools
+import time
+
+def generate_all_independent_binary_queries(existing_queries, k):
+    candidates = []
+    for bits in itertools.product([0, 1], repeat=k):
+        candidate = np.array(bits, dtype=np.int8)
+        if np.all(candidate == 0): continue
+        if len(existing_queries) == 0:
+            candidates.append(candidate)
+        else:
+            extended = np.array(existing_queries + [candidate])
+            if np.linalg.matrix_rank(extended) > np.linalg.matrix_rank(existing_queries):
+                candidates.append(candidate)
+    return candidates
+
 
 def num_of_total_sols(k):
     """Calculates C(2k - 1, k) / k for a given k."""
@@ -45,7 +61,7 @@ def generate_covariance_maximizing_sample(k, max_len, pad_scalar_val, pad_vec_va
     x = x.reshape(-1, 1)
     x_half = x_half.reshape(-1, 1)
 
-    model = Model("CovMax_ILP")
+    model = Model("main")
     model.setParam(GRB.Param.OutputFlag, 0)
     model.setParam(GRB.Param.Threads, 1)
 
@@ -58,35 +74,63 @@ def generate_covariance_maximizing_sample(k, max_len, pad_scalar_val, pad_vec_va
     model.setObjective(1, GRB.MAXIMIZE)
     model.optimize()
     num_solutions = model.SolCount
-    q, r, rwrd, entropy_list = [], [], [-1], [np.log2(num_solutions)]
+    q, r, rwrd, entropy = [], [],[-1], [np.log2(num_solutions)]
     num_of_constraints = 0
     is_solved = False
     while not is_solved:
         num_solutions = model.SolCount
-        if num_solutions < 2:
-            break
-        solution_matrix = np.zeros((num_solutions, k))
-        for sol_index in range(num_solutions):
-            model.setParam(GRB.Param.SolutionNumber, sol_index)
-            solution_matrix[sol_index] = [var.Xn for var in variables]
-        cov_matrix = np.cov(solution_matrix, rowvar=False)
+      
 
-        model_cov = Model("Maximize_Variance")
-        model_cov.setParam(GRB.Param.OutputFlag, 0)
-        I = model_cov.addVars(k, vtype=GRB.BINARY, name="I")
-        quad_expr = sum(I[i] * cov_matrix[i, j] * I[j] for i in range(k) for j in range(k))
-        model_cov.setObjective(quad_expr, GRB.MAXIMIZE)
-        model_cov.optimize()
 
-        selected_indices = [i for i in range(k) if I[i].X > 0.5]
-        selected_mask = np.zeros(k, dtype=int)
-        for i in selected_indices:
-            selected_mask[i] = 1
-        q.append(selected_mask)
-        new_result = np.matmul(selected_mask, x_half)[0]
-        r.append(int(new_result))
+        independent_candidates = generate_all_independent_binary_queries(q, k)
+        best_query = None
+        best_result = None
+        best_reduction = -np.inf
+        original_solution_count = model.SolCount
 
-        model.addConstr(sum(variables[i] for i in selected_indices) == new_result, name=f"c{num_of_constraints}")
+        for cand in independent_candidates:
+            # temp_model = Model("temp")
+            # temp_model.setParam(GRB.Param.OutputFlag, 0)
+            # temp_model.setParam(GRB.Param.Threads, 1)
+
+            # temp_variables = [temp_model.addVar(vtype=GRB.INTEGER, lb=0, ub=int(x[i].item()), name=f"x{i}") for i in range(k)]
+    
+            # temp_model.setParam(GRB.Param.PoolSearchMode, 2)
+            # temp_model.setParam(GRB.Param.PoolSolutions, max_num_of_sols_kept)
+            # temp_model.setObjective(1, GRB.MAXIMIZE)
+            # temp_model.optimize()
+            temp_model=model.copy()
+            temp_vars = temp_model.getVars()
+            # print(temp_model)
+            # print(cand)
+            # time.sleep(1)
+            selected_vars = [temp_vars[i] for i in range(k) if cand[i] == 1]
+            # if len(selected_vars) == 0:
+            #     continue
+            # print(x_half)
+            # print(cand)
+            # time.sleep(1)
+            # print(cand_result)
+
+            cand_result = int(np.dot(cand, x_half))
+            temp_model.addConstr(sum(selected_vars) == cand_result)
+            temp_model.optimize()
+
+            if temp_model.status == GRB.OPTIMAL:
+                reduction = original_solution_count - temp_model.SolCount
+                if reduction > best_reduction:
+                    best_reduction = reduction
+                    best_query = cand
+                    best_result = cand_result
+
+        # if best_query is None:
+        #     break  # Can't find valid query
+
+        q.append(best_query)
+        r.append(best_result)
+        model.addConstr(sum(variables[i] for i in range(k) if best_query[i] == 1) == best_result)
+    
+
         num_of_constraints += 1
         model.optimize()
 
@@ -94,13 +138,14 @@ def generate_covariance_maximizing_sample(k, max_len, pad_scalar_val, pad_vec_va
             if model.SolCount <= 1:
                 is_solved = True
                 rwrd.append(0)
+                entropy.append(0)
             else:
+                entropy.append(np.log2(model.SolCount))
                 rwrd.append(-1)
         else:
             rwrd.append(0)
             is_solved = True
-        entropy_list.append(np.log2(model.SolCount) if model.SolCount > 0 else 0.0)
-
+            entropy.append(np.log2(model.SolCount))
 
     rtg, s = [], 0
     for reward in reversed(rwrd):
@@ -111,7 +156,8 @@ def generate_covariance_maximizing_sample(k, max_len, pad_scalar_val, pad_vec_va
     q_padded = pad_sequence2d(q[:max_len], max_len, pad_vec_val)
     r_padded = pad_sequence(r[:max_len], max_len, pad_scalar_val)
     rtg_padded = pad_sequence(rtg[:max_len], max_len, pad_scalar_val)
-    entropy_padded = pad_sequence(entropy_list[:max_len], max_len, pad_scalar_val)
+    entropy_padded = pad_sequence(entropy[:max_len], max_len, pad_scalar_val)
+
     return q_padded, r_padded, rtg_padded, np.int8(mask_length), np.squeeze(x), entropy_padded
 
 def generate_and_store_sample(worker_id, num_samples_per_worker, k, max_len, pad_scalar_val, pad_vec_val, file_prefix):
@@ -140,7 +186,6 @@ def generate_and_store_sample(worker_id, num_samples_per_worker, k, max_len, pad
                 d_mask_lengths[sample_idx] = mask_length
                 d_bounds[sample_idx] = d_bound
                 d_entropy[sample_idx] = entropy
-
                 sample_idx += 1
                 pbar.update(1)
         pbar.close()
@@ -198,10 +243,10 @@ def count_samples_in_h5(file_name):
 if __name__ == '__main__':
     mp.set_start_method("spawn", force=True)
     parser = argparse.ArgumentParser()
-    parser.add_argument("--n_cores", type=int, default=1, help="Number of CPU cores to use")
-    parser.add_argument('--num_samples', type=int, default=10, help='Total number of samples to generate')
+    parser.add_argument("--n_cores", type=int, default=6, help="Number of CPU cores to use")
+    parser.add_argument('--num_samples', type=int, default=1, help='Total number of samples to generate')
     parser.add_argument('--file_name', type=str, default="dataset", help='Name of the output file')
-    parser.add_argument("--k", type=int, default=5, help="Length of the query vector")
+    parser.add_argument("--k", type=int, default=3, help="Length of the query vector")
 
     args = parser.parse_args()
     k = args.k
