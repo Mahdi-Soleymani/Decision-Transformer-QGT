@@ -68,6 +68,7 @@ class Trainer:
         self.rank = rank
         self.config = config
         self.val_dataloader=val_dataloader
+        self.best_loss = float('inf')
 
         #self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
         self.model.to(self.device)
@@ -283,9 +284,11 @@ class Trainer:
             logger.info("Epoch %d - Avg Loss: %f", epoch_num + 1, avg_loss)
 
             if self.rank==0:
-                self.save_checkpoint()
-                print("check_point saved")
-            
+                if avg_loss < self.best_loss:
+                    self.best_loss = avg_loss
+                    self.save_checkpoint()
+                    print("Checkpoint saved (improved loss)")
+                        
             
 
 

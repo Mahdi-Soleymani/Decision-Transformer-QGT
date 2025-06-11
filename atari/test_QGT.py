@@ -149,7 +149,7 @@ def test_sample(desired_num_of_queries, k, checkpoint_cov_path, checkpoint_rand_
         query_result_dim=1,
         block_size=10,### number of max timesteps in sequence (seq len=3 times this)
         embd_pdrop = 0.1,
-        n_layer=6,
+        n_layer=2,
         n_head=8,
         attn_pdrop=0.1,
         resid_pdrop=0.1,
