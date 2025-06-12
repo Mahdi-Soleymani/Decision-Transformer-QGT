@@ -49,14 +49,14 @@ def pad_sequence2d(seq, max_len, pad_value=0):
         seq = np.vstack((seq, pad_matrix))
     return seq
 
-def generate_covariance_maximizing_sample(k, max_len, pad_scalar_val, pad_vec_val, x, x_half):
-    # x = np.zeros(k, dtype=int)
-    # x_half = np.zeros(k, dtype=int)
-    # for i in range(k):
-    #     idx = np.random.choice(k, 1)
-    #     x[idx] += 1
-    #     if random.random() < 0.5:
-    #         x_half[idx] += 1
+def generate_covariance_maximizing_sample(k, max_len, pad_scalar_val, pad_vec_val):
+    x = np.zeros(k, dtype=int)
+    x_half = np.zeros(k, dtype=int)
+    for i in range(k):
+        idx = np.random.choice(k, 1)
+        x[idx] += 1
+        if random.random() < 0.5:
+            x_half[idx] += 1
 
     x = x.reshape(-1, 1)
     x_half = x_half.reshape(-1, 1)
@@ -79,8 +79,6 @@ def generate_covariance_maximizing_sample(k, max_len, pad_scalar_val, pad_vec_va
     is_solved = False
     while not is_solved:
         num_solutions = model.SolCount
-      
-
 
         independent_candidates = generate_all_independent_binary_queries(q, k)
         best_query = None
@@ -162,32 +160,28 @@ def generate_covariance_maximizing_sample(k, max_len, pad_scalar_val, pad_vec_va
 
 def generate_and_store_sample(worker_id, num_samples_per_worker, k, max_len, pad_scalar_val, pad_vec_val, file_prefix):
     file_name = f"{file_prefix}_{worker_id}.h5"
-    sol_count=XP.count_x_xhalf_pairs(k)
+    
     with h5py.File(file_name, 'w') as f:
-        d_queries = f.create_dataset("queries", (num_samples_per_worker*sol_count, max_len, k), dtype='i1')
-        d_results = f.create_dataset("results", (num_samples_per_worker*sol_count, max_len), dtype='i1')
-        d_rtgs = f.create_dataset("rtgs", (num_samples_per_worker*sol_count, max_len), dtype='float')
-        d_mask_lengths = f.create_dataset("mask_lengths", (num_samples_per_worker*sol_count,), dtype='i1')
-        d_bounds = f.create_dataset("upper_bounds", (num_samples_per_worker*sol_count, k), dtype='i1')
-        d_entropy = f.create_dataset("entropy", (num_samples_per_worker*sol_count, max_len), dtype='float32')
+        d_queries = f.create_dataset("queries", (num_samples_per_worker, max_len, k), dtype='i1')
+        d_results = f.create_dataset("results", (num_samples_per_worker, max_len), dtype='i1')
+        d_rtgs = f.create_dataset("rtgs", (num_samples_per_worker, max_len), dtype='float')
+        d_mask_lengths = f.create_dataset("mask_lengths", (num_samples_per_worker,), dtype='i1')
+        d_bounds = f.create_dataset("upper_bounds", (num_samples_per_worker, k), dtype='i1')
+        d_entropy = f.create_dataset("entropy", (num_samples_per_worker, max_len), dtype='float32')
 
-        pbar = tqdm(total=num_samples_per_worker*sol_count, position=worker_id, desc=f"Worker {worker_id}", leave=True)
-        generator = XP.XPairGenerator(k)
+        pbar = tqdm(total=num_samples_per_worker, position=worker_id, desc=f"Worker {worker_id}", leave=True)
         sample_idx = 0
-        while True:
-            x, x_half, done = generator.get_next()
-            if done:
-                break
-            for _ in range(num_samples_per_worker):
-                q, r, rtg, mask_length, d_bound, entropy = generate_covariance_maximizing_sample(k, max_len, pad_scalar_val, pad_vec_val, x, x_half)
-                d_queries[sample_idx] = q
-                d_results[sample_idx] = r
-                d_rtgs[sample_idx] = rtg
-                d_mask_lengths[sample_idx] = mask_length
-                d_bounds[sample_idx] = d_bound
-                d_entropy[sample_idx] = entropy
-                sample_idx += 1
-                pbar.update(1)
+        
+        for _ in range(num_samples_per_worker):
+            q, r, rtg, mask_length, d_bound, entropy = generate_covariance_maximizing_sample(k, max_len, pad_scalar_val, pad_vec_val)
+            d_queries[sample_idx] = q
+            d_results[sample_idx] = r
+            d_rtgs[sample_idx] = rtg
+            d_mask_lengths[sample_idx] = mask_length
+            d_bounds[sample_idx] = d_bound
+            d_entropy[sample_idx] = entropy
+            sample_idx += 1
+            pbar.update(1)
         pbar.close()
 
     print(f"Worker {worker_id} saved {num_samples_per_worker} samples to {file_name}")
@@ -244,9 +238,9 @@ if __name__ == '__main__':
     mp.set_start_method("spawn", force=True)
     parser = argparse.ArgumentParser()
     parser.add_argument("--n_cores", type=int, default=1, help="Number of CPU cores to use")
-    parser.add_argument('--num_samples', type=int, default=1, help='Total number of samples to generate')
+    parser.add_argument('--num_samples', type=int, default=100, help='Total number of samples to generate')
     parser.add_argument('--file_name', type=str, default="dataset", help='Name of the output file')
-    parser.add_argument("--k", type=int, default=8, help="Length of the query vector")
+    parser.add_argument("--k", type=int, default=3, help="Length of the query vector")
 
     args = parser.parse_args()
     k = args.k

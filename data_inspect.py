@@ -11,6 +11,6 @@ with h5py.File(file_path, "r") as f:
     for key in f.keys():
         data = f[key][:]
         print(f"\nDataset '{key}' shape: {data.shape}")
-        print(f"First few entries of '{key}':\n", data[30:40])
+        print(f"First few entries of '{key}':\n", data[:10])
         if key=="rtgs":
             print(f"average", data[:,0].mean())
