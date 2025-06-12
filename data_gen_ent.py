@@ -8,7 +8,6 @@ import os
 import multiprocessing as mp
 import concurrent.futures
 import math
-import Xpair_gen as XP
 import itertools
 import time
 
